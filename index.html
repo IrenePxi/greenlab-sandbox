@@ -35,6 +35,7 @@ body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:1
 h1{font-family:var(--f-disp);font-weight:700;font-size:28px;margin:0;text-wrap:balance}
 h1 .chev{color:var(--chev);margin-right:8px;letter-spacing:-3px}
 .sub{font-size:13px;opacity:.88;margin-top:2px}
+.concept{display:inline-block;margin-top:8px;font:600 12.5px var(--f-body);background:rgba(0,0,0,.22);border-left:3px solid var(--chev);padding:4px 10px;border-radius:0 6px 6px 0}
 .controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
 .seg{display:inline-flex;flex-wrap:wrap;background:rgba(0,0,0,.18);border-radius:8px;padding:3px}
 .seg button{font:600 13px var(--f-body);color:var(--sage-ink);background:transparent;border:0;padding:6px 10px;border-radius:6px;cursor:pointer}
@@ -124,6 +125,7 @@ details summary{cursor:pointer;font-family:var(--f-disp);font-weight:600;font-si
   <div>
     <h1><span class="chev">&#x276F;&#x276F;&#x276F;</span>GreenLab Skive · energy park sandbox</h1>
     <div class="sub">Python asset models · drag them in, link them to the energy buses, try price scenarios and see how the park reacts</div>
+    <div class="concept">Concept placeholder: a mock-up of the tool proposed for the GreenLab research call. Models and data are simplified and illustrative.</div>
   </div>
   <div class="controls">
     <div class="seg" role="group" aria-label="Price day" id="scSeg">
@@ -202,13 +204,6 @@ details summary{cursor:pointer;font-family:var(--f-disp);font-weight:600;font-si
     <div class="card"><h2>Storage levels</h2><p class="hint">Battery, H₂ tank and heat store, % full.</p><div class="chart"><canvas id="cStore"></canvas></div></div>
   </section>
 
-  <section class="card">
-    <details open>
-      <summary>Python script for this park</summary>
-      <p class="hint">The same layout as a Python script. Concept API: each box on the park is one model class.</p>
-      <pre class="code" id="code"></pre>
-    </details>
-  </section>
 
   <p class="foot">Concept prototype for a GreenLab research proposal (AAU). Model sizes start from public figures where known (84 MW wind and solar: 58 MW wind, 26 MW solar; 44 MWh battery; 6 MW electrolyser). Other values are assumptions. Prices are shaped on typical DK1 days, not real market data. Models are simplified for illustration.</p>
 </main>
@@ -534,7 +529,7 @@ function renderWarns(o){
   const list=[...o.warns]; if(flashMsg){list.unshift(flashMsg);flashMsg=null;}
   document.getElementById("warns").innerHTML=list.length?list.map(w=>`<li>${w}</li>`).join(""):`<li class="ok">All models are linked and every demand is met.</li>`;
 }
-function pyCode(){
+function pyCode(){if(!document.getElementById("code"))return;
   const esc=s=>s.replace(/&/g,"&amp;").replace(/</g,"&lt;");
   let s=`<span class="k">from</span> greenlab_sandbox <span class="k">import</span> Park, models <span class="k">as</span> m\n\n`;
   s+=`park = Park(grid=m.Grid(import_mw=${grid.imp}, export_mw=${grid.exp}, tariff_dkk_mwh=${grid.tar}))\n`;
