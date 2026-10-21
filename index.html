@@ -1,0 +1,543 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GreenLab Skive Hub Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: sage header band → [model library | park canvas with energy buses | inspector] → results → python script */
+:root{
+  --bg:#eef1ee; --panel:#ffffff; --ink:#1d2622; --muted:#5e6b65; --line:#d6ddd8; --soft:#f4f6f4;
+  --sage:#7d9187; --sage-ink:#ffffff; --chev:#f2d500; --teal:#4b7b78;
+  --elec:#c9a800; --h2:#2b7fae; --heat:#cf4f27; --lowheat:#e6935f; --gas:#4f8a45; --co2:#80878a;
+  --bad:#b3261e; --good:#2f7d4f; --warn:#b86a00;
+  --f-disp:"Barlow Semi Condensed","Arial Narrow",Arial,sans-serif;
+  --f-body:"Source Sans 3","Segoe UI",Arial,sans-serif;
+  --f-mono:"JetBrains Mono",Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#161d1a; --panel:#1f2925; --ink:#e7ece9; --muted:#9ba9a2; --line:#33413a; --soft:#25302b;
+  --sage:#4f625a; --sage-ink:#f3f6f4; --chev:#f2d500; --teal:#7fb3ae;
+  --elec:#f2d500; --h2:#5db8e6; --heat:#f27a4f; --lowheat:#f0aa7c; --gas:#86c174; --co2:#a5acaf;
+  --bad:#ef6a60; --good:#5fc28a; --warn:#f0a840; color-scheme:dark }}
+:root[data-theme="dark"]{
+  --bg:#161d1a; --panel:#1f2925; --ink:#e7ece9; --muted:#9ba9a2; --line:#33413a; --soft:#25302b;
+  --sage:#4f625a; --sage-ink:#f3f6f4; --chev:#f2d500; --teal:#7fb3ae;
+  --elec:#f2d500; --h2:#5db8e6; --heat:#f27a4f; --lowheat:#f0aa7c; --gas:#86c174; --co2:#a5acaf;
+  --bad:#ef6a60; --good:#5fc28a; --warn:#f0a840; color-scheme:dark }
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:14px;line-height:1.4}
+.band{background:var(--sage);color:var(--sage-ink)}
+.inner{max-width:1500px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.band .inner{padding-block:14px;display:flex;flex-wrap:wrap;gap:12px 24px;align-items:center;justify-content:space-between}
+h1{font-family:var(--f-disp);font-weight:700;font-size:28px;margin:0;text-wrap:balance}
+h1 .chev{color:var(--chev);margin-right:8px;letter-spacing:-3px}
+.sub{font-size:13px;opacity:.88;margin-top:2px}
+.controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.seg{display:inline-flex;flex-wrap:wrap;background:rgba(0,0,0,.18);border-radius:8px;padding:3px}
+.seg button{font:600 13px var(--f-body);color:var(--sage-ink);background:transparent;border:0;padding:6px 10px;border-radius:6px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--sage-ink);color:#1d2622}
+button:focus-visible,input:focus-visible,.pal:focus-visible{outline:2px solid var(--chev);outline-offset:2px}
+main.inner{padding-block:16px 28px;display:grid;gap:14px}
+.work{display:grid;grid-template-columns:200px minmax(0,1fr) 270px;gap:14px}
+@media (max-width:1100px){.work{grid-template-columns:minmax(0,1fr)}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;min-width:0}
+.card h2{font-family:var(--f-disp);font-weight:600;font-size:18px;margin:0 0 2px}
+.hint{color:var(--muted);font-size:12.5px;margin:0 0 8px}
+/* palette */
+.palette{display:grid;gap:6px}
+@media (max-width:1100px){.palette{grid-template-columns:repeat(auto-fill,minmax(160px,1fr))}}
+.pal{display:grid;grid-template-columns:30px minmax(0,1fr);gap:8px;align-items:center;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--soft);cursor:grab;user-select:none;-webkit-user-select:none;touch-action:none}
+.pal:hover{border-color:var(--teal)}
+.pal svg{width:28px;height:28px}
+.pal .n{font-weight:600;font-size:13px;line-height:1.15}
+.pal .f{font:11px var(--f-mono);color:var(--muted)}
+.grp{grid-column:1/-1;font:600 11px var(--f-body);text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-top:6px}
+/* canvas */
+.canvaswrap{overflow-x:auto;border:1px dashed var(--line);border-radius:8px;background:var(--soft)}
+#cv{display:block;width:100%;min-width:820px;height:auto;touch-action:none}
+.bus-label{font:700 13px var(--f-disp)}
+.node rect.box{fill:var(--panel);stroke:var(--line);stroke-width:1.4}
+.node.sel rect.box{stroke:var(--teal);stroke-width:2.6}
+.node.unlinked rect.box{stroke-dasharray:5 4;stroke:var(--warn)}
+.node .nm{font:600 12.5px var(--f-disp);fill:var(--ink)}
+.node .vl{font:600 11px var(--f-mono);fill:var(--muted)}
+.node .ic{fill:none;stroke:var(--teal);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.node{cursor:move}
+.port{cursor:crosshair;stroke:var(--panel);stroke-width:2}
+.port.off{fill-opacity:.25}
+.link{stroke-width:3}
+.link:hover{stroke-width:5;cursor:pointer}
+.tool{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;align-items:center}
+.btn{font:600 13px var(--f-body);border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:6px;padding:6px 10px;cursor:pointer}
+.btn.pri{background:var(--chev);border-color:var(--chev);color:#1d2622}
+.btn.dang{color:var(--bad)}
+/* inspector */
+.side{display:grid;gap:14px;align-content:start}
+.field{display:grid;gap:2px;margin:8px 0}
+.field label{font-size:12.5px;color:var(--muted);display:flex;justify-content:space-between}
+.field label b{font:600 12.5px var(--f-mono);color:var(--ink)}
+input[type=range]{width:100%;accent-color:var(--teal)}
+.links{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.chip{display:inline-flex;align-items:center;gap:5px;font:600 12px var(--f-body);padding:3px 9px;border-radius:999px;border:1px solid currentColor;background:transparent;cursor:pointer}
+.chip[aria-pressed="false"]{opacity:.45}
+.warns{list-style:none;margin:6px 0 0;padding:0;display:grid;gap:5px}
+.warns li{font-size:13px;padding:5px 8px;border-radius:6px;background:var(--soft);border-left:3px solid var(--warn)}
+.warns li.ok{border-left-color:var(--good)}
+/* results */
+.kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
+@media (max-width:1100px){.kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:520px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.kpi{background:var(--soft);border-radius:8px;padding:9px 11px}
+.kpi .l{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
+.kpi .v{font:600 20px var(--f-mono);font-variant-numeric:tabular-nums;margin-top:2px}
+.kpi .v small{font:400 12px var(--f-body);color:var(--muted);margin-left:3px}
+.kpi .d{font:600 11.5px var(--f-mono);margin-top:2px}
+.charts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+@media (max-width:900px){.charts{grid-template-columns:minmax(0,1fr)}}
+.chart{position:relative;height:220px}
+pre.code{margin:0;font:12.5px/1.5 var(--f-mono);background:var(--soft);border-radius:8px;padding:12px;overflow-x:auto;white-space:pre}
+.code .k{color:var(--h2)} .code .s{color:var(--good)} .code .c{color:var(--muted)}
+.foot{color:var(--muted);font-size:12px}
+details summary{cursor:pointer;font-family:var(--f-disp);font-weight:600;font-size:18px}
+</style>
+<style>body{margin:0}[hidden]{display:none!important}</style>
+</head>
+<body>
+
+
+<header class="band"><div class="inner">
+  <div>
+    <h1><span class="chev">&#x276F;&#x276F;&#x276F;</span>GreenLab Skive · energy park sandbox</h1>
+    <div class="sub">Python asset models · drag them in, link them to the energy buses, try price scenarios and see how the park reacts</div>
+  </div>
+  <div class="controls">
+    <div class="seg" role="group" aria-label="Price day" id="scSeg">
+      <button id="sc-sunny" data-sc="sunny" aria-pressed="true">Sunny, negative midday</button>
+      <button id="sc-windy" data-sc="windy" aria-pressed="false">Windy, cheap</button>
+      <button id="sc-calm" data-sc="calm" aria-pressed="false">Calm winter, expensive</button>
+    </div>
+    <div class="seg" role="group" aria-label="Operating rule" id="ruleSeg">
+      <button id="r-price" data-rule="price" aria-pressed="true">Follow the price</button>
+      <button id="r-fixed" data-rule="fixed" aria-pressed="false">Fixed schedule</button>
+    </div>
+  </div>
+</div></header>
+
+<main class="inner">
+  <section class="work">
+    <div class="card">
+      <h2>Model library</h2>
+      <p class="hint">Drag a model onto the park, or click to add it.</p>
+      <div class="palette" id="palette"></div>
+    </div>
+
+    <div class="card">
+      <h2>Park layout</h2>
+      <p class="hint">Drag from a coloured port to a bus to link it. Click a link to remove it. Drag boxes to move them.</p>
+      <div class="canvaswrap"><svg id="cv" viewBox="0 0 980 560" role="img" aria-label="Energy park canvas with electricity, heat and hydrogen buses"></svg></div>
+      <div class="tool">
+        <button class="btn pri" id="runBtn">Run simulation</button>
+        <button class="btn" id="resetBtn">Load GreenLab Skive</button>
+        <button class="btn" id="clearBtn">Empty park</button>
+        <span class="hint" id="runInfo" style="margin:0">–</span>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="card" id="insp">
+        <h2 id="iTitle">Select a model</h2>
+        <p class="hint" id="iFile">Click a box on the park to change its size.</p>
+        <div id="iBody"></div>
+      </div>
+      <div class="card">
+        <h2>Grid connection</h2>
+        <div class="field"><label for="gImp">Import limit <b id="gImpV">35 MW</b></label><input type="range" id="gImp" min="5" max="80" step="1" value="35"></div>
+        <div class="field"><label for="gExp">Export limit <b id="gExpV">30 MW</b></label><input type="range" id="gExp" min="5" max="80" step="1" value="30"></div>
+        <div class="field"><label for="gTar">Grid tariff <b id="gTarV">120 DKK/MWh</b></label><input type="range" id="gTar" min="0" max="400" step="10" value="120"></div>
+      </div>
+      <div class="card">
+        <h2>Checks</h2>
+        <ul class="warns" id="warns"></ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Results for one day</h2>
+    <p class="hint" id="resHint">15-minute steps. Change anything above and the results update.</p>
+    <div class="kpis" id="kpis"></div>
+  </section>
+
+  <section class="charts">
+    <div class="card"><h2>Grid price</h2><p class="hint">Day-ahead spot price, DKK/MWh. Green = cheapest third, red = most expensive third.</p><div class="chart"><canvas id="cPrice"></canvas></div></div>
+    <div class="card"><h2>Electricity balance</h2><p class="hint">Power use by model, MW. Line = grid exchange (import +). Dashed = connection limits.</p><div class="chart"><canvas id="cElec"></canvas></div></div>
+    <div class="card"><h2>Heat balance</h2><p class="hint">Heat supply by model, MW heat. Line = heat demand.</p><div class="chart"><canvas id="cHeat"></canvas></div></div>
+    <div class="card"><h2>Storage levels</h2><p class="hint">Battery, H₂ tank and heat store, % full.</p><div class="chart"><canvas id="cStore"></canvas></div></div>
+  </section>
+
+  <section class="card">
+    <details open>
+      <summary>Python script for this park</summary>
+      <p class="hint">The same layout as a Python script. Concept API: each box on the park is one model class.</p>
+      <pre class="code" id="code"></pre>
+    </details>
+  </section>
+
+  <p class="foot">Concept prototype for a GreenLab research proposal (AAU). Model sizes start from public figures where known (84 MW wind and solar: 58 MW wind, 26 MW solar; 44 MWh battery; 6 MW electrolyser). Other values are assumptions. Prices are shaped on typical DK1 days, not real market data. Models are simplified for illustration.</p>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+(function(){
+const N=96, DT=0.25, KWHKG=52;
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const CAR={e:{name:"Electricity",v:"--elec"},h:{name:"Heat",v:"--heat"},h2:{name:"Hydrogen",v:"--h2"}};
+/* ---------- model library ---------- */
+const ICON={
+  wind:"M14 13 V27 M14 13 L14 2 M14 13 L4 19 M14 13 L24 19",
+  sun:"M14 9 a5 5 0 1 0 0.01 0 M14 1 V4 M14 24 V27 M1 14 H4 M24 14 H27 M5 5 L7 7 M21 21 L23 23 M5 23 L7 21 M21 7 L23 5",
+  bat:"M3 8 H23 V22 H3 Z M23 12 H26 V18 H23 M10 15 H16 M13 12 V18",
+  bio:"M4 16 Q4 6 14 6 Q24 6 24 16 Z M3 16 H25 V25 H3 Z",
+  dc:"M5 3 H23 V10 H5 Z M5 12 H23 V19 H5 Z M5 21 H23 V27 H5 Z M8 6.5 H10 M8 15.5 H10",
+  hp:"M4 4 H24 V24 H4 Z M14 14 m-6 0 a6 6 0 1 0 12 0 a6 6 0 1 0 -12 0 M14 8 V20 M8 14 H20",
+  boil:"M5 26 H23 M8 26 V10 H20 V26 M11 7 q2 -3 0 -5 M17 7 q2 -3 0 -5",
+  sky:"M4 26 V12 H16 V26 M18 26 V3 H22 V26 M2 26 H26 M7 18 q2 -3 4 0",
+  qf:"M9 4 H14 V7 Q18 9 18 13 V25 H5 V13 Q5 9 9 7 Z M20 14 H25 M23 12 L25 14 L23 16",
+  h2:"M7 14 a5 5 0 1 0 0.01 0 M21 14 a5 5 0 1 0 0.01 0 M12 14 H16",
+  rock:"M3 24 L8 14 L13 18 L18 8 L25 24 Z",
+  house:"M3 14 L14 4 L25 14 M6 12 V25 H22 V12",
+  star:"M14 3 L17 11 L25 11 L19 16 L21 24 L14 19 L7 24 L9 16 L3 11 L11 11 Z",
+  tank:"M5 9 Q5 5 9 5 H19 Q23 5 23 9 V19 Q23 23 19 23 H9 Q5 23 5 19 Z M10 5 V23 M18 5 V23",
+  meth:"M10 3 H18 M12 3 V10 L5 24 H23 L16 10 V3 M8 18 H20",
+  grid:"M14 2 L8 26 M14 2 L20 26 M6 8 H22 M7 15 H21 M10 20 L18 26 M18 20 L10 26"
+};
+const TYPES={
+  wind:{name:"Wind farm",file:"wind_farm.py",cls:"WindFarm",icon:"wind",grp:"Supply",car:["e"],need:["e"],row:0,
+    p:{P:{l:"Capacity",min:0,max:120,step:1,u:"MW",d:58}}},
+  solar:{name:"Solar park",file:"solar_park.py",cls:"SolarPark",icon:"sun",grp:"Supply",car:["e"],need:["e"],row:0,
+    p:{P:{l:"Capacity",min:0,max:80,step:1,u:"MW",d:26}}},
+  battery:{name:"Battery",file:"battery.py",cls:"Battery",icon:"bat",grp:"Storage",car:["e"],need:["e"],row:0,
+    p:{P:{l:"Power",min:1,max:60,step:1,u:"MW",d:20},E:{l:"Energy",min:5,max:200,step:1,u:"MWh",d:44}}},
+  biogas:{name:"Biogas plant",file:"biogas_plant.py",cls:"BiogasPlant",icon:"bio",grp:"Industry",car:["e"],need:["e"],row:0,
+    p:{P:{l:"Power use",min:0.5,max:5,step:0.1,u:"MW",d:1.5}}},
+  datacentre:{name:"Data centre",file:"data_centre.py",cls:"DataCentre",icon:"dc",grp:"Industry",car:["e","h"],need:["e"],row:1,
+    p:{P:{l:"IT load",min:1,max:40,step:1,u:"MW",d:6},W:{l:"Waste heat used",min:0,max:90,step:5,u:"%",d:70}}},
+  heatpump:{name:"Heat pump",file:"heat_pump.py",cls:"HeatPump",icon:"hp",grp:"Conversion",car:["e","h"],need:["e","h"],row:1,
+    p:{Q:{l:"Heat output",min:1,max:30,step:0.5,u:"MW",d:6},COP:{l:"COP",min:2,max:5,step:0.1,u:"",d:3.4}}},
+  eboiler:{name:"E-boiler",file:"e_boiler.py",cls:"EBoiler",icon:"boil",grp:"Conversion",car:["e","h"],need:["e","h"],row:1,
+    p:{P:{l:"Power",min:1,max:40,step:1,u:"MW",d:10}}},
+  skyclean:{name:"SkyClean",file:"skyclean_pyrolysis.py",cls:"SkyCleanPyrolysis",icon:"sky",grp:"Industry",car:["e","h"],need:["e"],row:1,
+    p:{P:{l:"Power use",min:0.5,max:5,step:0.1,u:"MW",d:1},H:{l:"Surplus heat",min:0,max:6,step:0.1,u:"MW",d:1.5}}},
+  quantafuel:{name:"Quantafuel",file:"quantafuel.py",cls:"PlasticToOil",icon:"qf",grp:"Industry",car:["e","h"],need:["e","h"],row:1,
+    p:{P:{l:"Power use",min:0.5,max:8,step:0.1,u:"MW",d:2},H:{l:"Process heat",min:0.5,max:10,step:0.1,u:"MW",d:3}}},
+  electrolyser:{name:"Electrolyser",file:"electrolyser.py",cls:"Electrolyser",icon:"h2",grp:"Conversion",car:["e","h","h2"],need:["e","h2"],row:2,
+    p:{P:{l:"Capacity",min:1,max:100,step:1,u:"MW",d:6}}},
+  rockstore:{name:"Rock heat store",file:"rock_store.py",cls:"RockHeatStore",icon:"rock",grp:"Storage",car:["h"],need:["h"],row:2,
+    p:{E:{l:"Capacity",min:10,max:400,step:5,u:"MWh",d:80},P:{l:"Max charge",min:2,max:40,step:1,u:"MW",d:12}}},
+  districtheat:{name:"District heat",file:"district_heat.py",cls:"DistrictHeat",icon:"house",grp:"Demand",car:["h"],need:["h"],row:2,
+    p:{D:{l:"Average demand",min:1,max:20,step:0.5,u:"MW",d:5}}},
+  starfish:{name:"Starfish drying",file:"starfish_dryer.py",cls:"StarfishDryer",icon:"star",grp:"Industry",car:["h"],need:["h"],row:2,
+    p:{H:{l:"Drying heat",min:0.5,max:8,step:0.1,u:"MW",d:2}}},
+  h2tank:{name:"H₂ tank",file:"h2_tank.py",cls:"HydrogenTank",icon:"tank",grp:"Storage",car:["h2"],need:["h2"],row:3,
+    p:{C:{l:"Capacity",min:0.2,max:10,step:0.1,u:"t",d:1.5}}},
+  methanol:{name:"E-methanol",file:"methanol_plant.py",cls:"MethanolPlant",icon:"meth",grp:"Demand",car:["h2"],need:["h2"],row:3,
+    p:{U:{l:"H₂ use",min:10,max:600,step:5,u:"kg/h",d:50}}}
+};
+const GRP=["Supply","Storage","Conversion","Industry","Demand"];
+/* ---------- canvas geometry ---------- */
+const BUS={e:{y:118},h:{y:318},h2:{y:478}}; const BX0=150,BX1=965; const NW=128,NH=50;
+const ROWY=[30,180,380,500]; // node top per row; row 2 between heat & H2 for electrolyser/stores? (stores below heat)
+function rowY(t){const r=TYPES[t].row; if(t==="electrolyser")return 395; if(r===2)return 342; return ROWY[r];}
+let nodes=[], seq=1, sel=null;
+function defaults(t){const o={};for(const k in TYPES[t].p)o[k]=TYPES[t].p[k].d;return o;}
+function add(t,x,y,links){const n={id:t+"_"+(seq++),t,x,y,p:defaults(t),links:new Set(links||[])};nodes.push(n);return n;}
+function loadGreenLab(){
+  nodes=[];seq=1;
+  add("wind",170,ROWY[0],["e"]); add("solar",310,ROWY[0],["e"]); add("battery",450,ROWY[0],["e"]); add("biogas",590,ROWY[0],["e"]);
+  add("datacentre",170,ROWY[1],["e","h"]); add("heatpump",310,ROWY[1],["e","h"]); add("eboiler",450,ROWY[1],["e","h"]);
+  add("skyclean",590,ROWY[1],["e","h"]); add("quantafuel",730,ROWY[1],["e","h"]);
+  add("rockstore",170,342,["h"]); add("districtheat",310,342,["h"]); add("starfish",450,342,["h"]);
+  add("electrolyser",830,395,["e","h","h2"]);
+  add("h2tank",170,500,["h2"]); add("methanol",310,500,["h2"]);
+  sel=null;
+}
+/* ---------- scenario profiles ---------- */
+const g=(h,m,s)=>Math.exp(-0.5*((h-m)/s)**2);
+const bell=(h,m,w)=>Math.abs(h-m)<w?Math.pow(Math.cos((h-m)/w*Math.PI/2),1.5):0;
+function profile(sc){
+  const price=[],wcf=[],pcf=[],dhf=[];
+  for(let t=0;t<N;t++){const h=t/4;let p,w,s,d;
+    if(sc==="sunny"){p=540+560*g(h,8,1.3)+1050*g(h,19.2,1.6)-760*g(h,13,2.1)+35*Math.sin(h*2.1);w=0.28+0.08*Math.sin(h/3.2)+0.04*Math.sin(h*1.7);s=0.88*bell(h,13,6.5);d=0.85+0.25*g(h,7,2)+0.22*g(h,19,2.5);}
+    else if(sc==="windy"){p=170+170*g(h,18,2)+70*g(h,8,1.5)-230*g(h,3.5,1.6)+25*Math.sin(h*1.9);w=0.82+0.1*Math.sin(h/2.5)-0.25*g(h,15,1.5);s=0.25*bell(h,13,5.5);d=1+0.28*g(h,7,2)+0.24*g(h,19,2.5);}
+    else{p=1150+950*g(h,8.5,1.5)+1250*g(h,18,1.8)-320*g(h,3,2.5)+50*Math.sin(h*2.3);w=0.08+0.04*Math.sin(h/2);s=0.10*bell(h,12.5,3.5);d=1.25+0.32*g(h,7,2)+0.28*g(h,19,2.5);}
+    price.push(Math.round(p));wcf.push(Math.max(0,w));pcf.push(Math.max(0,s));dhf.push(d);}
+  return {price,wcf,pcf,dhf};
+}
+/* ---------- simulation ---------- */
+let sc="sunny", rule="price", grid={imp:35,exp:30,tar:120};
+function active(n){return TYPES[n.t].need.every(c=>n.links.has(c));}
+function simulate(){
+  const pr=profile(sc), price=pr.price;
+  const A=nodes.filter(active), has=t=>A.some(n=>n.t===t), sum=(t,k,f)=>A.filter(n=>n.t===t).reduce((s,n)=>s+(f?f(n):n.p[k]),0);
+  const warns=[];
+  nodes.forEach(n=>{if(!active(n)){const miss=TYPES[n.t].need.filter(c=>!n.links.has(c)).map(c=>CAR[c].name.toLowerCase());warns.push(`${TYPES[n.t].name} is not linked to the ${miss.join(" and ")} bus, so it is left out.`);}});
+  const windP=sum("wind","P"), pvP=sum("solar","P");
+  const bat=A.filter(n=>n.t==="battery"); const batP=bat.reduce((s,n)=>s+n.p.P,0), batE=bat.reduce((s,n)=>s+n.p.E,0);
+  const elP=sum("electrolyser","P"), elHeat=A.filter(n=>n.t==="electrolyser"&&n.links.has("h")).reduce((s,n)=>s+n.p.P,0)/Math.max(elP,1e-9);
+  const tankC=sum("h2tank","C");
+  let h2Use=sum("methanol","U");
+  if(h2Use>0&&!nodes.some(n=>n.t==="biogas"&&active(n))){warns.push("E-methanol needs CO₂ from the biogas plant. Link the biogas plant, or the methanol plant stops.");h2Use=0;}
+  const hpQ=sum("heatpump","Q"), hpCOP=hpQ>0?A.filter(n=>n.t==="heatpump").reduce((s,n)=>s+n.p.COP*n.p.Q,0)/hpQ:3.4;
+  const ebP=sum("eboiler","P");
+  const stE=sum("rockstore","E"), stP=sum("rockstore","P");
+  const dcP=sum("datacentre","P"), dcHeat=A.filter(n=>n.t==="datacentre"&&n.links.has("h")).reduce((s,n)=>s+n.p.P*n.p.W/100,0);
+  const skyP=sum("skyclean","P"), skyH=A.filter(n=>n.t==="skyclean"&&n.links.has("h")).reduce((s,n)=>s+n.p.H,0);
+  const qfP=sum("quantafuel","P"), qfH=sum("quantafuel","H");
+  const bioP=sum("biogas","P"), dhD=sum("districtheat","D"), sfH=sum("starfish","H");
+  if(elP>0&&h2Use===0&&tankC===0) warns.push("The electrolyser has no hydrogen user or tank, so it stays off.");
+  const sorted=[...Array(N).keys()].sort((a,b)=>price[a]-price[b]);
+  const smart=rule==="price";
+  // plans
+  const elPlan=new Array(N).fill(0), heatPlan=new Array(N).fill(0), bPlan=new Array(N).fill(0);
+  const h2rate=h2Use*KWHKG/1000; // MW electrolyser to follow demand
+  if(elP>0){
+    if(smart&&tankC>0){let r=Math.min(h2rate,elP)*24; for(const t of sorted){if(r<=0)break;const e=Math.min(elP*DT,r);elPlan[t]=e/DT;r-=e;} for(let t=0;t<N;t++) if(price[t]<0) elPlan[t]=elP;}
+    else elPlan.fill(Math.min(elP,h2rate));
+  }
+  const L0=t=>dcP+skyP+qfP+bioP;
+  const Dh=t=>dhD*pr.dhf[t]+sfH+qfH;
+  const Mh=t=>dcHeat+skyH;
+  const flexCap=hpQ+ebP*0.98;
+  if(flexCap>0){
+    const needs=[...Array(N).keys()].map(t=>Math.max(0,Dh(t)-Mh(t)-0.2*elPlan[t]*elHeat));
+    if(smart&&stE>0){let r=needs.reduce((a,b)=>a+b,0)*DT; for(const t of sorted){if(r<=0)break;const q=Math.min(flexCap*DT,r);heatPlan[t]=q/DT;r-=q;} for(let t=0;t<N;t++) if(price[t]<0) heatPlan[t]=flexCap;}
+    else for(let t=0;t<N;t++) heatPlan[t]=needs[t];
+  }
+  if(smart&&batP>0&&price[sorted[N-1]]-price[sorted[0]]>200){const k=Math.max(2,Math.round(batE/batP/DT*0.9));for(let i=0;i<k&&i<N/2;i++){bPlan[sorted[i]]=-batP;bPlan[sorted[N-1-i]]=batP;}}
+  let h2=tankC/2, tes=stE/2, soc=batE/2;
+  const o={price,res:[],L0:[],el:[],hpE:[],ebE:[],bch:[],bdis:[],grid:[],curt:[],over:[],soc:[],h2:[],tes:[],hWaste:[],hHp:[],hEb:[],hSt:[],dem:[],unmetH:[],unmetH2:[],stCh:[]};
+  for(let t=0;t<N;t++){
+    const RES=windP*pr.wcf[t]+pvP*pr.pcf[t], L=L0(t);
+    // electrolyser with tank bounds
+    let el=elPlan[t];
+    if(tankC>0){const lo=Math.max(0,((0.05*tankC-h2)*1000/DT+h2Use))*KWHKG/1000, hi=Math.max(0,((tankC-h2)*1000/DT+h2Use))*KWHKG/1000; el=Math.min(Math.max(el,Math.min(lo,elP)),Math.min(elP,hi));}
+    // heat flexible
+    const need=Dh(t)-Mh(t)-0.2*el*elHeat;
+    let q=heatPlan[t];
+    if(stE>0){const maxCh=Math.min(stP,(stE-tes)/DT), maxDis=Math.min(stP,tes/DT); q=Math.min(Math.max(q,need-maxDis),need+maxCh); q=Math.max(0,Math.min(q,flexCap));}
+    else q=Math.max(0,Math.min(need,flexCap));
+    let hpH=Math.min(q,hpQ), ebH=Math.min(q-hpH,ebP*0.98);
+    // battery
+    let b=bPlan[t]; const bch=Math.min(batP,(batE-soc)/DT/0.95), bdis=Math.min(batP,(soc-0.1*batE)*0.95/DT);
+    b=b<0?-Math.min(-b,Math.max(0,bch)):Math.min(b,Math.max(0,bdis));
+    let gr=L+el+hpH/hpCOP+ebH/0.98-b-RES, curt=0;
+    if(smart){
+      if(gr>grid.imp){let x=gr-grid.imp;
+        if(b<0){const c=Math.min(x,-b);b+=c;x-=c;}
+        const more=Math.max(0,bdis-Math.max(b,0)); const d1=Math.min(x,more); b+=d1; x-=d1;
+        if(stE>0){const maxDis=Math.min(stP,tes/DT); const room=Math.max(0,(hpH+ebH)-Math.max(0,need-maxDis)); const cutEb=Math.min(ebH,room,x*0.98); ebH-=cutEb; x-=cutEb/0.98; const cutHp=Math.min(hpH,room-cutEb,x*hpCOP); hpH-=cutHp; x-=cutHp/hpCOP;}
+        if(tankC>0){const lo=Math.max(0,((0.05*tankC-h2)*1000/DT+h2Use))*KWHKG/1000; const c=Math.min(x,Math.max(0,el-lo)); el-=c; x-=c;}
+        gr=L+el+hpH/hpCOP+ebH/0.98-b-RES;}
+      const floor=price[t]<0?0:-grid.exp;
+      if(gr<floor){let x=floor-gr;
+        if(tankC>0&&elP>0){const hi=Math.max(0,((tankC-h2)*1000/DT+h2Use))*KWHKG/1000; const u=Math.min(x,Math.max(0,Math.min(elP,hi)-el)); el+=u; x-=u;}
+        if(stE>0&&ebP>0){const maxCh=Math.min(stP,(stE-tes)/DT); const room=Math.max(0,(need+maxCh)-(hpH+ebH)); const u=Math.min(x*0.98,room,ebP*0.98-ebH); if(u>0){ebH+=u;x-=u/0.98;}}
+        if(b>0){const r=Math.min(x,b);b-=r;x-=r;} const u3=Math.min(x,Math.max(0,bch-(b<0?-b:0))); if(u3>0){b-=u3;x-=u3;}
+        gr=L+el+hpH/hpCOP+ebH/0.98-b-RES;}
+    }
+    if(gr<-grid.exp){curt=-grid.exp-gr; gr=-grid.exp;}
+    const over=Math.max(0,gr-grid.imp);
+    // final heat balance with store
+    let supply=Mh(t)+0.2*el*elHeat+hpH+ebH, bal=supply-Dh(t), stFlow=0, waste=0, unmetH=0;
+    if(stE>0){const maxCh=Math.min(stP,(stE-tes)/DT), maxDis=Math.min(stP,tes/DT); stFlow=Math.max(-maxDis,Math.min(maxCh,bal));}
+    const rem=bal-stFlow; if(rem>0) waste=rem; else unmetH=-rem;
+    tes+=stFlow*DT;
+    const prod=el*1000/KWHKG; let unmetH2=0;
+    if(tankC>0){h2+=(prod-h2Use)*DT/1000; if(h2<0){unmetH2=-h2*1000/DT; h2=0;} if(h2>tankC) h2=tankC;}
+    else unmetH2=Math.max(0,h2Use-prod);
+    soc+=b<0?-b*DT*0.95:-b*DT/0.95;
+    o.res.push(RES);o.L0.push(L);o.el.push(el);o.hpE.push(hpH/hpCOP);o.ebE.push(ebH/0.98);o.bch.push(Math.max(0,-b));o.bdis.push(Math.max(0,b));
+    o.grid.push(gr);o.curt.push(curt);o.over.push(over);o.soc.push(batE?100*soc/batE:null);o.h2.push(tankC?100*h2/tankC:null);o.tes.push(stE?100*tes/stE:null);
+    o.hWaste.push(Mh(t)+0.2*el*elHeat);o.hHp.push(hpH);o.hEb.push(ebH);o.hSt.push(Math.max(0,-stFlow));o.stCh.push(Math.max(0,stFlow));o.dem.push(Dh(t));o.unmetH.push(unmetH);o.unmetH2.push(unmetH2);
+  }
+  let cost=0,kg=0,elc=0,curtE=0,overE=0,peak=0,uh=0,uh2=0;
+  for(let t=0;t<N;t++){const gr=o.grid[t],p=price[t];cost+=(gr>0?(p+grid.tar)*gr:p*gr)*DT;const pk=o.el[t]*1000/KWHKG*DT;kg+=pk;elc+=(p+(gr>0?grid.tar:0))*o.el[t]*DT;curtE+=o.curt[t]*DT;overE+=o.over[t]*DT;peak=Math.max(peak,gr);uh+=o.unmetH[t]*DT;uh2+=o.unmetH2[t]*DT/1000;}
+  o.k={cost:cost/1000,peak,curt:curtE,over:overE,kg,h2c:kg>0?elc/kg:0,uh,uh2,res:o.res.reduce((a,b)=>a+b,0)*DT};
+  if(overE>0.05) warns.push(`The import limit is exceeded for ${fmt(overE,1)} MWh. Raise the limit, add storage, or let assets follow the price.`);
+  if(uh>0.5) warns.push(`${fmt(uh,0)} MWh of heat demand is not met. Add a heat pump, e-boiler or heat store.`);
+  if(uh2>0.01) warns.push(`${fmt(uh2,2)} t of hydrogen demand is not met. Add electrolyser capacity or a tank.`);
+  if(curtE>0.5) warns.push(`${fmt(curtE,0)} MWh of wind and solar is curtailed at the export limit.`);
+  o.warns=warns; return o;
+}
+const fmt=(v,d=1)=>(Math.abs(v)<0.5*Math.pow(10,-d)?0:v).toFixed(d);
+/* ---------- palette ---------- */
+const pal=document.getElementById("palette");
+function iconSvg(name,stroke){return `<svg viewBox="0 0 28 28" aria-hidden="true"><path d="${ICON[name]}" fill="none" stroke="${stroke||"var(--teal)"}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;}
+function buildPalette(){
+  let h="";GRP.forEach(gp=>{h+=`<div class="grp">${gp}</div>`;for(const t in TYPES) if(TYPES[t].grp===gp)
+    h+=`<div class="pal" draggable="true" tabindex="0" role="button" data-t="${t}" aria-label="Add ${TYPES[t].name}">${iconSvg(TYPES[t].icon)}<div><div class="n">${TYPES[t].name}</div><div class="f">${TYPES[t].file}</div></div></div>`;});
+  pal.innerHTML=h;
+  pal.querySelectorAll(".pal").forEach(el=>{
+    el.addEventListener("dragstart",e=>{e.dataTransfer.setData("text/plain",el.dataset.t);});
+    el.addEventListener("click",()=>{const t=el.dataset.t;const y=rowY(t);let x=170;while(nodes.some(n=>Math.abs(n.x-x)<NW&&Math.abs(n.y-y)<NH)&&x<BX1-NW)x+=140;const n=add(t,Math.min(x,BX1-NW),y,[]);sel=n.id;refresh();});
+    el.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();el.click();}});
+  });
+}
+/* ---------- canvas ---------- */
+const cv=document.getElementById("cv"), NS="http://www.w3.org/2000/svg";
+function E(tag,a,p){const e=document.createElementNS(NS,tag);for(const k in a)e.setAttribute(k,a[k]);(p||cv).appendChild(e);return e;}
+function svgPt(ev){const pt=cv.createSVGPoint();pt.x=ev.clientX;pt.y=ev.clientY;return pt.matrixTransform(cv.getScreenCTM().inverse());}
+function portPos(n,c,i,k){const busY=BUS[c].y, cy=n.y+NH/2, top=busY<cy; const x=n.x+NW*(i+1)/(k+1); return {x,y:top?n.y:n.y+NH,top};}
+let drag=null, wire=null;
+function draw(){
+  cv.innerHTML="";
+  // grid node + buses
+  for(const c in BUS){const y=BUS[c].y;E("rect",{x:BX0,y:y-4,width:BX1-BX0,height:8,rx:3,fill:css(CAR[c].v),"data-bus":c});
+    const t=E("text",{x:BX0-10,y:y+5,"text-anchor":"end",class:"bus-label",fill:css(CAR[c].v)});t.textContent=CAR[c].name;}
+  const gN=E("g",{class:"node",transform:`translate(14,${BUS.e.y-90})`});
+  E("rect",{class:"box",width:110,height:NH,rx:9},gN);E("path",{d:ICON.grid,class:"ic",transform:"translate(8,11)"},gN);
+  const gt=E("text",{x:42,y:22,class:"nm"},gN);gt.textContent="Grid";const gv=E("text",{x:42,y:38,class:"vl"},gN);gv.textContent=`±${grid.imp}/${grid.exp} MW`;
+  E("path",{d:`M69 ${BUS.e.y-40} V${BUS.e.y-22} H${BX0+8} V${BUS.e.y}`,fill:"none",stroke:css("--elec"),"stroke-width":3});
+  // links
+  nodes.forEach(n=>{const T=TYPES[n.t];T.car.forEach((c,i)=>{if(!n.links.has(c))return;const pp=portPos(n,c,i,T.car.length);
+    const l=E("line",{x1:pp.x,y1:pp.y,x2:pp.x,y2:BUS[c].y,class:"link",stroke:css(CAR[c].v)});
+    l.addEventListener("click",ev=>{ev.stopPropagation();n.links.delete(c);sel=n.id;refresh();});
+    const ti=E("title",{},l);ti.textContent=`${T.name} ↔ ${CAR[c].name} (click to unlink)`;});});
+  // nodes
+  nodes.forEach(n=>{const T=TYPES[n.t];
+    const G=E("g",{class:"node"+(sel===n.id?" sel":"")+(active(n)?"":" unlinked"),transform:`translate(${n.x},${n.y})`,"data-id":n.id});
+    E("rect",{class:"box",width:NW,height:NH,rx:9},G);E("path",{d:ICON[T.icon],class:"ic",transform:"translate(8,11)"},G);
+    const a=E("text",{x:42,y:21,class:"nm"},G);a.textContent=T.name;
+    const k0=Object.keys(T.p)[0];const b=E("text",{x:42,y:37,class:"vl"},G);b.textContent=`${n.p[k0]} ${T.p[k0].u}`;
+    G.addEventListener("pointerdown",ev=>{if(ev.target.classList.contains("port"))return;const p=svgPt(ev);drag={n,dx:p.x-n.x,dy:p.y-n.y,moved:false};sel=n.id;G.setPointerCapture(ev.pointerId);});
+    G.addEventListener("pointermove",ev=>{if(!drag||drag.n!==n)return;const p=svgPt(ev);n.x=Math.max(130,Math.min(980-NW,p.x-drag.dx));n.y=Math.max(4,Math.min(560-NH-4,p.y-drag.dy));drag.moved=true;G.setAttribute("transform",`translate(${n.x},${n.y})`);});
+    G.addEventListener("pointerup",()=>{if(drag&&drag.n===n){drag=null;refresh();}});
+    T.car.forEach((c,i)=>{const pp=portPos(n,c,i,T.car.length);
+      const pc=E("circle",{cx:pp.x,cy:pp.y,r:7,class:"port"+(n.links.has(c)?"":" off"),fill:css(CAR[c].v)});
+      const ti=E("title",{},pc);ti.textContent=`${CAR[c].name} port: drag to the ${CAR[c].name.toLowerCase()} bus, or click to ${n.links.has(c)?"unlink":"link"}`;
+      pc.addEventListener("pointerdown",ev=>{ev.stopPropagation();wire={n,c,x:pp.x,y:pp.y,moved:false,el:E("line",{x1:pp.x,y1:pp.y,x2:pp.x,y2:pp.y,stroke:css(CAR[c].v),"stroke-width":3,"stroke-dasharray":"6 4"})};cv.setPointerCapture(ev.pointerId);});
+    });
+  });
+}
+cv.addEventListener("pointermove",ev=>{if(!wire)return;const p=svgPt(ev);wire.el.setAttribute("x2",p.x);wire.el.setAttribute("y2",p.y);if(Math.hypot(p.x-wire.x,p.y-wire.y)>6)wire.moved=true;});
+cv.addEventListener("pointerup",ev=>{if(!wire)return;const p=svgPt(ev);const {n,c}=wire;
+  if(!wire.moved){n.links.has(c)?n.links.delete(c):n.links.add(c);}
+  else if(Math.abs(p.y-BUS[c].y)<22&&p.x>BX0-10&&p.x<BX1+10) n.links.add(c);
+  else{const hit=Object.keys(BUS).find(k=>Math.abs(p.y-BUS[k].y)<22); if(hit&&hit!==c) flash(`${TYPES[n.t].name}: a ${CAR[c].name.toLowerCase()} port can only link to the ${CAR[c].name.toLowerCase()} bus.`);}
+  sel=n.id;wire=null;refresh();});
+cv.addEventListener("dragover",e=>e.preventDefault());
+cv.addEventListener("drop",e=>{e.preventDefault();const t=e.dataTransfer.getData("text/plain");if(!TYPES[t])return;const p=svgPt(e);const n=add(t,Math.max(130,Math.min(980-NW,p.x-NW/2)),Math.max(4,Math.min(560-NH-4,p.y-NH/2)),[]);sel=n.id;refresh();});
+let flashMsg=null;function flash(m){flashMsg=m;}
+/* ---------- inspector ---------- */
+function inspector(){
+  const n=nodes.find(x=>x.id===sel), b=document.getElementById("iBody");
+  if(!n){document.getElementById("iTitle").textContent="Select a model";document.getElementById("iFile").textContent="Click a box on the park to change its size.";b.innerHTML="";return;}
+  const T=TYPES[n.t];document.getElementById("iTitle").textContent=T.name;document.getElementById("iFile").innerHTML=`<span style="font-family:var(--f-mono)">models/${T.file}</span> · class ${T.cls}`;
+  let h="";for(const k in T.p){const q=T.p[k];h+=`<div class="field"><label for="p-${k}">${q.l} <b id="pv-${k}">${n.p[k]} ${q.u}</b></label><input type="range" id="p-${k}" data-k="${k}" min="${q.min}" max="${q.max}" step="${q.step}" value="${n.p[k]}"></div>`;}
+  h+=`<div class="hint" style="margin:6px 0 2px">Linked to</div><div class="links">`+T.car.map(c=>`<button class="chip" data-c="${c}" aria-pressed="${n.links.has(c)}" style="color:${css(CAR[c].v)}">${CAR[c].name}${T.need.includes(c)?"":" (optional)"}</button>`).join("")+`</div>`;
+  h+=`<div class="tool"><button class="btn dang" id="delBtn">Remove from park</button></div>`;
+  b.innerHTML=h;
+  b.querySelectorAll("input[type=range]").forEach(r=>r.addEventListener("input",()=>{n.p[r.dataset.k]=+r.value;document.getElementById("pv-"+r.dataset.k).textContent=`${r.value} ${T.p[r.dataset.k].u}`;schedule();}));
+  b.querySelectorAll(".chip").forEach(ch=>ch.addEventListener("click",()=>{const c=ch.dataset.c;n.links.has(c)?n.links.delete(c):n.links.add(c);refresh();}));
+  document.getElementById("delBtn").addEventListener("click",()=>{nodes=nodes.filter(x=>x!==n);sel=null;refresh();});
+}
+/* ---------- results ---------- */
+const labels=[...Array(N).keys()].map(i=>String(Math.floor(i/4)).padStart(2,"0")+":"+String((i%4)*15).padStart(2,"0"));
+let charts={}, baseline=null;
+function alpha(hex,a){const h=hex.replace("#","");const n=parseInt(h.length===3?h.split("").map(c=>c+c).join(""):h,16);return `rgba(${n>>16&255},${n>>8&255},${n&255},${a})`;}
+function opts(y,extra){const ink=css("--muted"),gl=css("--line");return Object.assign({responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:"index",intersect:false},
+  plugins:{legend:{labels:{color:css("--ink"),boxWidth:12,boxHeight:8,font:{size:11},filter:i=>i.text!==""}}},
+  scales:{x:{ticks:{color:ink,maxRotation:0,autoSkip:false,callback:(v,i)=>i%16===0?labels[i]:"",font:{size:11}},grid:{color:gl,drawTicks:false},border:{color:gl}},
+    y:{ticks:{color:ink,font:{size:11}},grid:{color:gl},border:{color:gl},title:{display:!!y,text:y,color:ink,font:{size:11}}}}},extra||{});}
+function stack(ds){let acc=new Array(N).fill(0);ds.forEach((d,i)=>{d.data=d.data.map((v,j)=>acc[j]+=v);d.fill=i===0?"origin":"-1";d.pointRadius=0;d.borderWidth=0;});return ds;}
+function renderCharts(o){
+  for(const k in charts)charts[k].destroy();charts={};
+  const sp=[...o.price].sort((a,b)=>a-b),lo=sp[32],hi=sp[64];
+  charts.p=new Chart(document.getElementById("cPrice"),{type:"bar",data:{labels,datasets:[{label:"DKK/MWh",data:o.price,backgroundColor:o.price.map(p=>p<lo?css("--good"):p>=hi?css("--bad"):css("--co2")),barPercentage:1,categoryPercentage:.9}]},options:opts("DKK/MWh",{plugins:{legend:{display:false}}})});
+  const st=stack([
+    {label:"Site loads",data:o.L0,backgroundColor:alpha(css("--co2"),.55)},
+    {label:"Electrolyser",data:o.el,backgroundColor:alpha(css("--h2"),.7)},
+    {label:"Heat pump",data:o.hpE,backgroundColor:alpha(css("--lowheat"),.75)},
+    {label:"E-boiler",data:o.ebE,backgroundColor:alpha(css("--heat"),.7)},
+    {label:"Battery charge",data:o.bch,backgroundColor:alpha(css("--elec"),.75)}]);
+  const ymax=Math.max(grid.imp,grid.exp,...st[4].data,...o.res)*1.1;
+  charts.e=new Chart(document.getElementById("cElec"),{type:"line",data:{labels,datasets:[...st,
+    {label:"Wind + solar",data:o.res,borderColor:css("--good"),borderWidth:1.5,pointRadius:0,fill:false},
+    {label:"Grid exchange",data:o.grid,borderColor:css("--ink"),borderWidth:1.8,pointRadius:0,fill:false},
+    {label:"Limits",data:labels.map(()=>grid.imp),borderColor:css("--bad"),borderDash:[5,4],borderWidth:1.2,pointRadius:0,fill:false},
+    {label:"",data:labels.map(()=>-grid.exp),borderColor:css("--bad"),borderDash:[5,4],borderWidth:1.2,pointRadius:0,fill:false}]},
+    options:opts("MW",{scales:Object.assign(opts().scales,{y:Object.assign(opts("MW").scales.y,{min:-Math.ceil(ymax/10)*10,max:Math.ceil(ymax/10)*10})})})});
+  const hs=stack([
+    {label:"Waste & surplus heat",data:o.hWaste,backgroundColor:alpha(css("--lowheat"),.55)},
+    {label:"Heat pump",data:o.hHp,backgroundColor:alpha(css("--heat"),.45)},
+    {label:"E-boiler",data:o.hEb,backgroundColor:alpha(css("--heat"),.8)},
+    {label:"From heat store",data:o.hSt,backgroundColor:alpha(css("--teal"),.6)}]);
+  charts.h=new Chart(document.getElementById("cHeat"),{type:"line",data:{labels,datasets:[...hs,{label:"Heat demand",data:o.dem,borderColor:css("--ink"),borderDash:[5,4],borderWidth:1.5,pointRadius:0,fill:false}]},options:opts("MW heat")});
+  charts.s=new Chart(document.getElementById("cStore"),{type:"line",data:{labels,datasets:[
+    {label:"Battery",data:o.soc,borderColor:css("--elec"),borderWidth:2,pointRadius:0,spanGaps:false},
+    {label:"H₂ tank",data:o.h2,borderColor:css("--h2"),borderWidth:2,pointRadius:0},
+    {label:"Heat store",data:o.tes,borderColor:css("--heat"),borderWidth:2,pointRadius:0}]},
+    options:opts("% full",{scales:Object.assign(opts().scales,{y:Object.assign(opts("% full").scales.y,{min:0,max:100})})})});
+}
+function renderKpis(o,ref){
+  const k=o.k, r=ref&&ref.k;
+  const items=[["Power cost of the day",k.cost,"kDKK",0,"lower",r&&r.cost],["Peak grid import",k.peak,"MW",1,"lower",r&&r.peak],["Above import limit",k.over,"MWh",1,"lower",r&&r.over],
+    ["Wind + solar curtailed",k.curt,"MWh",1,"lower",r&&r.curt],["Hydrogen made",k.kg/1000,"t",2,"",r&&r.kg/1000],["Heat not met",k.uh,"MWh",1,"lower",r&&r.uh]];
+  document.getElementById("kpis").innerHTML=items.map(([l,v,u,d,dir,rv])=>{
+    let delta="";if(rv!=null&&rule==="price"){const df=v-rv;if(Math.abs(df)>=0.5*Math.pow(10,-d)){const good=dir==="lower"?df<0:df>0;delta=`<div class="d" style="color:${dir?(good?"var(--good)":"var(--bad)"):"var(--muted)"}">${df>0?"+":"−"}${fmt(Math.abs(df),d)} vs fixed</div>`;}else delta=`<div class="d" style="color:var(--muted)">same as fixed</div>`;}
+    const bad=(l==="Above import limit"||l==="Heat not met")&&v>0.05;
+    return `<div class="kpi"><div class="l">${l}</div><div class="v" style="${bad?"color:var(--bad)":""}">${fmt(v,d)}<small>${u}</small></div>${delta}</div>`;}).join("");
+}
+function renderWarns(o){
+  const list=[...o.warns]; if(flashMsg){list.unshift(flashMsg);flashMsg=null;}
+  document.getElementById("warns").innerHTML=list.length?list.map(w=>`<li>${w}</li>`).join(""):`<li class="ok">All models are linked and every demand is met.</li>`;
+}
+function pyCode(){
+  const esc=s=>s.replace(/&/g,"&amp;").replace(/</g,"&lt;");
+  let s=`<span class="k">from</span> greenlab_sandbox <span class="k">import</span> Park, models <span class="k">as</span> m\n\n`;
+  s+=`park = Park(grid=m.Grid(import_mw=${grid.imp}, export_mw=${grid.exp}, tariff_dkk_mwh=${grid.tar}))\n`;
+  nodes.forEach(n=>{const T=TYPES[n.t];const args=Object.keys(T.p).map(k=>`${k.toLowerCase()}=${n.p[k]}`).join(", ");
+    const bus=[...n.links].map(c=>`<span class="s">"${c==="e"?"electricity":c==="h"?"heat":"hydrogen"}"</span>`).join(", ");
+    s+=`park.add(m.${T.cls}(${args}), buses=[${bus}])${active(n)?"":"  <span class='c'># not fully linked</span>"}\n`;});
+  const day={sunny:"dk1_sunny_negative_midday",windy:"dk1_windy_cheap",calm:"dk1_calm_winter"}[sc];
+  s+=`\nresult = park.simulate(prices=<span class="s">"${day}"</span>, step=<span class="s">"15min"</span>, rule=<span class="s">"${rule==="price"?"follow_price":"fixed_schedule"}"</span>)\nresult.dashboard()`;
+  document.getElementById("code").innerHTML=s;
+}
+let tmr=null;function schedule(){clearTimeout(tmr);tmr=setTimeout(()=>run(false),120);}
+function run(redraw=true){
+  if(redraw)draw();
+  const o=simulate();
+  let ref=null; if(rule==="price"){rule="fixed";ref=simulate();rule="price";}
+  renderCharts(o);renderKpis(o,ref);renderWarns(o);pyCode();
+  const act=nodes.filter(active).length;
+  document.getElementById("runInfo").textContent=`${act} of ${nodes.length} models running · ${N} steps simulated`;
+  const names={sunny:"a sunny day with negative midday prices",windy:"a windy, cheap day",calm:"a calm, expensive winter day"};
+  document.getElementById("resHint").textContent=`One day in 15-minute steps: ${names[sc]}, assets ${rule==="price"?"follow the price (changes vs a fixed schedule shown under each number)":"on a fixed schedule"}.`;
+}
+function refresh(){draw();inspector();schedule();}
+/* ---------- controls ---------- */
+function seg(id,attr,cb){document.getElementById(id).addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;document.querySelectorAll(`#${id} button`).forEach(x=>x.setAttribute("aria-pressed",x===b?"true":"false"));cb(b.dataset[attr]);});}
+seg("scSeg","sc",v=>{sc=v;run();});
+seg("ruleSeg","rule",v=>{rule=v;run();});
+[["gImp","imp","MW"],["gExp","exp","MW"],["gTar","tar","DKK/MWh"]].forEach(([id,k,u])=>{const r=document.getElementById(id);r.addEventListener("input",()=>{grid[k]=+r.value;document.getElementById(id+"V").textContent=`${r.value} ${u}`;draw();schedule();});});
+document.getElementById("runBtn").addEventListener("click",()=>run());
+document.getElementById("resetBtn").addEventListener("click",()=>{loadGreenLab();refresh();});
+document.getElementById("clearBtn").addEventListener("click",()=>{nodes=[];sel=null;refresh();});
+function recolor(){refresh();}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change",recolor);
+new MutationObserver(recolor).observe(document.documentElement,{attributes:true,attributeFilter:["data-theme"]});
+buildPalette();loadGreenLab();
+// preset via hash for screenshots, e.g. #sunny-price-sel or #calm-fixed
+const m=/^#?(sunny|windy|calm)-(price|fixed)(-demo)?$/.exec(location.hash||"");
+if(m){sc=m[1];rule=m[2];document.querySelectorAll("#scSeg button").forEach(x=>x.setAttribute("aria-pressed",x.dataset.sc===sc?"true":"false"));document.querySelectorAll("#ruleSeg button").forEach(x=>x.setAttribute("aria-pressed",x.dataset.rule===rule?"true":"false"));
+  if(m[3]){const n=add("battery",590,500,["e"]);n.p.P=15;n.p.E=40;n.links=new Set();sel="eboiler_7";}}
+sel=sel||"electrolyser_13";
+refresh();
+})();
+</script>
+
+</body>
+</html>
