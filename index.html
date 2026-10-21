@@ -101,6 +101,18 @@ input[type=range]{width:100%;accent-color:var(--teal)}
 pre.code{margin:0;font:12.5px/1.5 var(--f-mono);background:var(--soft);border-radius:8px;padding:12px;overflow-x:auto;white-space:pre}
 .code .k{color:var(--h2)} .code .s{color:var(--good)} .code .c{color:var(--muted)}
 .foot{color:var(--muted);font-size:12px}
+.live{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;margin:0 0 8px}
+.seg2{display:inline-flex;border:1px solid var(--line);border-radius:7px;padding:2px;background:var(--soft)}
+.seg2 button{font:600 12px var(--f-body);border:0;background:transparent;color:var(--ink);padding:4px 8px;border-radius:5px;cursor:pointer}
+.seg2 button[aria-pressed="true"]{background:var(--teal);color:var(--panel)}
+#clock{font:600 15px var(--f-mono);min-width:150px}
+#tSl{flex:1 1 200px;accent-color:var(--bad)}
+.now{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;margin:0 0 8px}
+@media (max-width:700px){.now{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.now div{background:var(--soft);border-radius:6px;padding:5px 8px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.now b{display:block;font:600 15px var(--f-mono);color:var(--ink);text-transform:none;letter-spacing:0}
+.flow{fill:none;stroke-linecap:round;stroke-dasharray:7 9;pointer-events:none}
+@media (prefers-reduced-motion:reduce){.flow{stroke-dasharray:none}}
 details summary{cursor:pointer;font-family:var(--f-disp);font-weight:600;font-size:18px}
 </style>
 <style>body{margin:0}[hidden]{display:none!important}</style>
@@ -136,7 +148,19 @@ details summary{cursor:pointer;font-family:var(--f-disp);font-weight:600;font-si
 
     <div class="card">
       <h2>Park layout</h2>
-      <p class="hint">Drag from a coloured port to a bus to link it. Click a link to remove it. Drag boxes to move them.</p>
+      <p class="hint">Drag from a coloured port to a bus to link it. Click a link to remove it. Drag boxes to move them. Press Play to watch the park run.</p>
+      <div class="live">
+        <button class="btn pri" id="play" aria-label="Play">&#9654; Play</button>
+        <div class="seg2" role="group" aria-label="Speed" id="spdSeg">
+          <button id="sp1" data-s="1" aria-pressed="false">15 min/s</button><button id="sp4" data-s="4" aria-pressed="true">1 h/s</button><button id="sp16" data-s="16" aria-pressed="false">4 h/s</button><button id="sp48" data-s="48" aria-pressed="false">12 h/s</button>
+        </div>
+        <div class="seg2" role="group" aria-label="Days" id="daySeg">
+          <button id="d1" data-d="1" aria-pressed="true">1 day</button><button id="d2" data-d="2" aria-pressed="false">2 days</button>
+        </div>
+        <span id="clock">Day 1 · 12:30</span>
+        <input type="range" id="tSl" min="0" max="95" value="50" aria-label="Time">
+      </div>
+      <div class="now" id="now"></div>
       <div class="canvaswrap"><svg id="cv" viewBox="0 0 980 560" role="img" aria-label="Energy park canvas with electricity, heat and hydrogen buses"></svg></div>
       <div class="tool">
         <button class="btn pri" id="runBtn">Run simulation</button>
@@ -166,7 +190,7 @@ details summary{cursor:pointer;font-family:var(--f-disp);font-weight:600;font-si
   </section>
 
   <section class="card">
-    <h2>Results for one day</h2>
+    <h2 id="resTitle">Results for one day</h2>
     <p class="hint" id="resHint">15-minute steps. Change anything above and the results update.</p>
     <div class="kpis" id="kpis"></div>
   </section>
@@ -192,7 +216,8 @@ details summary{cursor:pointer;font-family:var(--f-disp);font-weight:600;font-si
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script>
 (function(){
-const N=96, DT=0.25, KWHKG=52;
+let D=1, N=96; const DT=0.25, KWHKG=52, NEXT={sunny:"windy",windy:"calm",calm:"sunny"}, DAYNAME={sunny:"sunny",windy:"windy",calm:"calm winter"};
+let tNow=50, playing=false, speed=4, lastO=null;
 const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const CAR={e:{name:"Electricity",v:"--elec"},h:{name:"Heat",v:"--heat"},h2:{name:"Hydrogen",v:"--h2"}};
 /* ---------- model library ---------- */
@@ -267,9 +292,10 @@ function loadGreenLab(){
 /* ---------- scenario profiles ---------- */
 const g=(h,m,s)=>Math.exp(-0.5*((h-m)/s)**2);
 const bell=(h,m,w)=>Math.abs(h-m)<w?Math.pow(Math.cos((h-m)/w*Math.PI/2),1.5):0;
-function profile(sc){
-  const price=[],wcf=[],pcf=[],dhf=[];
-  for(let t=0;t<N;t++){const h=t/4;let p,w,s,d;
+function dayTypes(){const a=[sc];for(let d=1;d<D;d++)a.push(NEXT[a[d-1]]);return a;}
+function profile(sc0){
+  const price=[],wcf=[],pcf=[],dhf=[]; const types=dayTypes();
+  for(let t=0;t<N;t++){const h=(t%96)/4, sc=types[Math.floor(t/96)];let p,w,s,d;
     if(sc==="sunny"){p=540+560*g(h,8,1.3)+1050*g(h,19.2,1.6)-760*g(h,13,2.1)+35*Math.sin(h*2.1);w=0.28+0.08*Math.sin(h/3.2)+0.04*Math.sin(h*1.7);s=0.88*bell(h,13,6.5);d=0.85+0.25*g(h,7,2)+0.22*g(h,19,2.5);}
     else if(sc==="windy"){p=170+170*g(h,18,2)+70*g(h,8,1.5)-230*g(h,3.5,1.6)+25*Math.sin(h*1.9);w=0.82+0.1*Math.sin(h/2.5)-0.25*g(h,15,1.5);s=0.25*bell(h,13,5.5);d=1+0.28*g(h,7,2)+0.24*g(h,19,2.5);}
     else{p=1150+950*g(h,8.5,1.5)+1250*g(h,18,1.8)-320*g(h,3,2.5)+50*Math.sin(h*2.3);w=0.08+0.04*Math.sin(h/2);s=0.10*bell(h,12.5,3.5);d=1.25+0.32*g(h,7,2)+0.28*g(h,19,2.5);}
@@ -298,27 +324,28 @@ function simulate(){
   const qfP=sum("quantafuel","P"), qfH=sum("quantafuel","H");
   const bioP=sum("biogas","P"), dhD=sum("districtheat","D"), sfH=sum("starfish","H");
   if(elP>0&&h2Use===0&&tankC===0) warns.push("The electrolyser has no hydrogen user or tank, so it stays off.");
-  const sorted=[...Array(N).keys()].sort((a,b)=>price[a]-price[b]);
   const smart=rule==="price";
-  // plans
   const elPlan=new Array(N).fill(0), heatPlan=new Array(N).fill(0), bPlan=new Array(N).fill(0);
-  const h2rate=h2Use*KWHKG/1000; // MW electrolyser to follow demand
-  if(elP>0){
-    if(smart&&tankC>0){let r=Math.min(h2rate,elP)*24; for(const t of sorted){if(r<=0)break;const e=Math.min(elP*DT,r);elPlan[t]=e/DT;r-=e;} for(let t=0;t<N;t++) if(price[t]<0) elPlan[t]=elP;}
-    else elPlan.fill(Math.min(elP,h2rate));
-  }
+  const h2rate=h2Use*KWHKG/1000;
   const L0=t=>dcP+skyP+qfP+bioP;
   const Dh=t=>dhD*pr.dhf[t]+sfH+qfH;
   const Mh=t=>dcHeat+skyH;
   const flexCap=hpQ+ebP*0.98;
-  if(flexCap>0){
-    const needs=[...Array(N).keys()].map(t=>Math.max(0,Dh(t)-Mh(t)-0.2*elPlan[t]*elHeat));
-    if(smart&&stE>0){let r=needs.reduce((a,b)=>a+b,0)*DT; for(const t of sorted){if(r<=0)break;const q=Math.min(flexCap*DT,r);heatPlan[t]=q/DT;r-=q;} for(let t=0;t<N;t++) if(price[t]<0) heatPlan[t]=flexCap;}
-    else for(let t=0;t<N;t++) heatPlan[t]=needs[t];
+  for(let d=0;d<D;d++){
+    const idx=[...Array(96).keys()].map(i=>i+d*96), sorted=[...idx].sort((a,b)=>price[a]-price[b]);
+    if(elP>0){
+      if(smart&&tankC>0){let r=Math.min(h2rate,elP)*24; for(const t of sorted){if(r<=0)break;const e=Math.min(elP*DT,r);elPlan[t]=e/DT;r-=e;} idx.forEach(t=>{if(price[t]<0) elPlan[t]=elP;});}
+      else idx.forEach(t=>elPlan[t]=Math.min(elP,h2rate));
+    }
+    if(flexCap>0){
+      const needs=idx.map(t=>Math.max(0,Dh(t)-Mh(t)-0.2*elPlan[t]*elHeat));
+      if(smart&&stE>0){let r=needs.reduce((a,b)=>a+b,0)*DT; for(const t of sorted){if(r<=0)break;const q=Math.min(flexCap*DT,r);heatPlan[t]=q/DT;r-=q;} idx.forEach(t=>{if(price[t]<0) heatPlan[t]=flexCap;});}
+      else idx.forEach((t,i)=>heatPlan[t]=needs[i]);
+    }
+    if(smart&&batP>0&&price[sorted[95]]-price[sorted[0]]>200){const k=Math.max(2,Math.round(batE/batP/DT*0.9));for(let i=0;i<k&&i<48;i++){bPlan[sorted[i]]=-batP;bPlan[sorted[95-i]]=batP;}}
   }
-  if(smart&&batP>0&&price[sorted[N-1]]-price[sorted[0]]>200){const k=Math.max(2,Math.round(batE/batP/DT*0.9));for(let i=0;i<k&&i<N/2;i++){bPlan[sorted[i]]=-batP;bPlan[sorted[N-1-i]]=batP;}}
   let h2=tankC/2, tes=stE/2, soc=batE/2;
-  const o={price,res:[],L0:[],el:[],hpE:[],ebE:[],bch:[],bdis:[],grid:[],curt:[],over:[],soc:[],h2:[],tes:[],hWaste:[],hHp:[],hEb:[],hSt:[],dem:[],unmetH:[],unmetH2:[],stCh:[]};
+  const o={price,wcf:pr.wcf,pcf:pr.pcf,dhf:pr.dhf,prod:[],served:[],h2Use,elHeat,res:[],L0:[],el:[],hpE:[],ebE:[],bch:[],bdis:[],grid:[],curt:[],over:[],soc:[],h2:[],tes:[],hWaste:[],hHp:[],hEb:[],hSt:[],dem:[],unmetH:[],unmetH2:[],stCh:[]};
   for(let t=0;t<N;t++){
     const RES=windP*pr.wcf[t]+pvP*pr.pcf[t], L=L0(t);
     // electrolyser with tank bounds
@@ -359,6 +386,7 @@ function simulate(){
     if(tankC>0){h2+=(prod-h2Use)*DT/1000; if(h2<0){unmetH2=-h2*1000/DT; h2=0;} if(h2>tankC) h2=tankC;}
     else unmetH2=Math.max(0,h2Use-prod);
     soc+=b<0?-b*DT*0.95:-b*DT/0.95;
+    o.prod.push(prod);o.served.push(Math.max(0,h2Use-unmetH2));
     o.res.push(RES);o.L0.push(L);o.el.push(el);o.hpE.push(hpH/hpCOP);o.ebE.push(ebH/0.98);o.bch.push(Math.max(0,-b));o.bdis.push(Math.max(0,b));
     o.grid.push(gr);o.curt.push(curt);o.over.push(over);o.soc.push(batE?100*soc/batE:null);o.h2.push(tankC?100*h2/tankC:null);o.tes.push(stE?100*tes/stE:null);
     o.hWaste.push(Mh(t)+0.2*el*elHeat);o.hHp.push(hpH);o.hEb.push(ebH);o.hSt.push(Math.max(0,-stFlow));o.stCh.push(Math.max(0,stFlow));o.dem.push(Dh(t));o.unmetH.push(unmetH);o.unmetH2.push(unmetH2);
@@ -392,18 +420,21 @@ function E(tag,a,p){const e=document.createElementNS(NS,tag);for(const k in a)e.
 function svgPt(ev){const pt=cv.createSVGPoint();pt.x=ev.clientX;pt.y=ev.clientY;return pt.matrixTransform(cv.getScreenCTM().inverse());}
 function portPos(n,c,i,k){const busY=BUS[c].y, cy=n.y+NH/2, top=busY<cy; const x=n.x+NW*(i+1)/(k+1); return {x,y:top?n.y:n.y+NH,top};}
 let drag=null, wire=null;
+let linkEls=[], valEls={}, gridFlow=null, gridVal=null;
 function draw(){
-  cv.innerHTML="";
+  cv.innerHTML="";linkEls=[];valEls={};
   // grid node + buses
   for(const c in BUS){const y=BUS[c].y;E("rect",{x:BX0,y:y-4,width:BX1-BX0,height:8,rx:3,fill:css(CAR[c].v),"data-bus":c});
     const t=E("text",{x:BX0-10,y:y+5,"text-anchor":"end",class:"bus-label",fill:css(CAR[c].v)});t.textContent=CAR[c].name;}
   const gN=E("g",{class:"node",transform:`translate(14,${BUS.e.y-90})`});
-  E("rect",{class:"box",width:110,height:NH,rx:9},gN);E("path",{d:ICON.grid,class:"ic",transform:"translate(8,11)"},gN);
+  E("rect",{class:"box",width:124,height:NH,rx:9},gN);E("path",{d:ICON.grid,class:"ic",transform:"translate(8,11)"},gN);
   const gt=E("text",{x:42,y:22,class:"nm"},gN);gt.textContent="Grid";const gv=E("text",{x:42,y:38,class:"vl"},gN);gv.textContent=`±${grid.imp}/${grid.exp} MW`;
-  E("path",{d:`M69 ${BUS.e.y-40} V${BUS.e.y-22} H${BX0+8} V${BUS.e.y}`,fill:"none",stroke:css("--elec"),"stroke-width":3});
+  E("path",{d:`M69 ${BUS.e.y-40} V${BUS.e.y-22} H${BX0+8} V${BUS.e.y}`,fill:"none",stroke:css("--elec"),"stroke-width":3,"stroke-opacity":.35});
+  gridFlow=E("path",{d:`M69 ${BUS.e.y-40} V${BUS.e.y-22} H${BX0+8} V${BUS.e.y}`,class:"flow",stroke:css("--elec"),"stroke-width":0});gridVal=gv;
   // links
   nodes.forEach(n=>{const T=TYPES[n.t];T.car.forEach((c,i)=>{if(!n.links.has(c))return;const pp=portPos(n,c,i,T.car.length);
-    const l=E("line",{x1:pp.x,y1:pp.y,x2:pp.x,y2:BUS[c].y,class:"link",stroke:css(CAR[c].v)});
+    const l=E("line",{x1:pp.x,y1:pp.y,x2:pp.x,y2:BUS[c].y,class:"link",stroke:css(CAR[c].v),"stroke-opacity":.35});
+    const fl=E("line",{x1:pp.x,y1:pp.y,x2:pp.x,y2:BUS[c].y,class:"flow",stroke:css(CAR[c].v),"stroke-width":0});linkEls.push({n,c,el:fl});
     l.addEventListener("click",ev=>{ev.stopPropagation();n.links.delete(c);sel=n.id;refresh();});
     const ti=E("title",{},l);ti.textContent=`${T.name} ↔ ${CAR[c].name} (click to unlink)`;});});
   // nodes
@@ -411,7 +442,7 @@ function draw(){
     const G=E("g",{class:"node"+(sel===n.id?" sel":"")+(active(n)?"":" unlinked"),transform:`translate(${n.x},${n.y})`,"data-id":n.id});
     E("rect",{class:"box",width:NW,height:NH,rx:9},G);E("path",{d:ICON[T.icon],class:"ic",transform:"translate(8,11)"},G);
     const a=E("text",{x:42,y:21,class:"nm"},G);a.textContent=T.name;
-    const k0=Object.keys(T.p)[0];const b=E("text",{x:42,y:37,class:"vl"},G);b.textContent=`${n.p[k0]} ${T.p[k0].u}`;
+    const k0=Object.keys(T.p)[0];const b=E("text",{x:42,y:37,class:"vl"},G);b.textContent=`${n.p[k0]} ${T.p[k0].u}`;valEls[n.id]=b;
     G.addEventListener("pointerdown",ev=>{if(ev.target.classList.contains("port"))return;const p=svgPt(ev);drag={n,dx:p.x-n.x,dy:p.y-n.y,moved:false};sel=n.id;G.setPointerCapture(ev.pointerId);});
     G.addEventListener("pointermove",ev=>{if(!drag||drag.n!==n)return;const p=svgPt(ev);n.x=Math.max(130,Math.min(980-NW,p.x-drag.dx));n.y=Math.max(4,Math.min(560-NH-4,p.y-drag.dy));drag.moved=true;G.setAttribute("transform",`translate(${n.x},${n.y})`);});
     G.addEventListener("pointerup",()=>{if(drag&&drag.n===n){drag=null;refresh();}});
@@ -445,17 +476,25 @@ function inspector(){
   document.getElementById("delBtn").addEventListener("click",()=>{nodes=nodes.filter(x=>x!==n);sel=null;refresh();});
 }
 /* ---------- results ---------- */
-const labels=[...Array(N).keys()].map(i=>String(Math.floor(i/4)).padStart(2,"0")+":"+String((i%4)*15).padStart(2,"0"));
+let labels=[];
+const hhmm=i=>String(Math.floor((i%96)/4)).padStart(2,"0")+":"+String((i%4)*15).padStart(2,"0");
+function mkLabels(){labels=[...Array(N).keys()].map(i=>(D>1?`D${Math.floor(i/96)+1} `:"")+hhmm(i));}
+mkLabels();
 let charts={}, baseline=null;
 function alpha(hex,a){const h=hex.replace("#","");const n=parseInt(h.length===3?h.split("").map(c=>c+c).join(""):h,16);return `rgba(${n>>16&255},${n>>8&255},${n&255},${a})`;}
 function opts(y,extra){const ink=css("--muted"),gl=css("--line");return Object.assign({responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:"index",intersect:false},
   plugins:{legend:{labels:{color:css("--ink"),boxWidth:12,boxHeight:8,font:{size:11},filter:i=>i.text!==""}}},
-  scales:{x:{ticks:{color:ink,maxRotation:0,autoSkip:false,callback:(v,i)=>i%16===0?labels[i]:"",font:{size:11}},grid:{color:gl,drawTicks:false},border:{color:gl}},
+  scales:{x:{ticks:{color:ink,maxRotation:0,autoSkip:false,callback:(v,i)=>i%(D>1?24:16)===0?labels[i]:"",font:{size:11}},grid:{color:gl,drawTicks:false},border:{color:gl}},
     y:{ticks:{color:ink,font:{size:11}},grid:{color:gl},border:{color:gl},title:{display:!!y,text:y,color:ink,font:{size:11}}}}},extra||{});}
 function stack(ds){let acc=new Array(N).fill(0);ds.forEach((d,i)=>{d.data=d.data.map((v,j)=>acc[j]+=v);d.fill=i===0?"origin":"-1";d.pointRadius=0;d.borderWidth=0;});return ds;}
+const cursor={id:"cursor",afterDatasetsDraw(c){const x=c.scales.x;if(!x)return;const a=c.chartArea,ctx=c.ctx,px=x.getPixelForValue(tNow);
+  ctx.save();ctx.strokeStyle=css("--bad");ctx.setLineDash([4,3]);ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(px,a.top);ctx.lineTo(px,a.bottom);ctx.stroke();
+  if(D>1){const p2=x.getPixelForValue(96);ctx.setLineDash([]);ctx.strokeStyle=css("--muted");ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(p2,a.top);ctx.lineTo(p2,a.bottom);ctx.stroke();}
+  ctx.restore();}};
+Chart.register(cursor);
 function renderCharts(o){
   for(const k in charts)charts[k].destroy();charts={};
-  const sp=[...o.price].sort((a,b)=>a-b),lo=sp[32],hi=sp[64];
+  const sp=[...o.price].sort((a,b)=>a-b),lo=sp[Math.floor(N/3)],hi=sp[Math.floor(2*N/3)];
   charts.p=new Chart(document.getElementById("cPrice"),{type:"bar",data:{labels,datasets:[{label:"DKK/MWh",data:o.price,backgroundColor:o.price.map(p=>p<lo?css("--good"):p>=hi?css("--bad"):css("--co2")),barPercentage:1,categoryPercentage:.9}]},options:opts("DKK/MWh",{plugins:{legend:{display:false}}})});
   const st=stack([
     {label:"Site loads",data:o.L0,backgroundColor:alpha(css("--co2"),.55)},
@@ -484,7 +523,7 @@ function renderCharts(o){
 }
 function renderKpis(o,ref){
   const k=o.k, r=ref&&ref.k;
-  const items=[["Power cost of the day",k.cost,"kDKK",0,"lower",r&&r.cost],["Peak grid import",k.peak,"MW",1,"lower",r&&r.peak],["Above import limit",k.over,"MWh",1,"lower",r&&r.over],
+  const items=[["Power cost",k.cost,"kDKK",0,"lower",r&&r.cost],["Peak grid import",k.peak,"MW",1,"lower",r&&r.peak],["Above import limit",k.over,"MWh",1,"lower",r&&r.over],
     ["Wind + solar curtailed",k.curt,"MWh",1,"lower",r&&r.curt],["Hydrogen made",k.kg/1000,"t",2,"",r&&r.kg/1000],["Heat not met",k.uh,"MWh",1,"lower",r&&r.uh]];
   document.getElementById("kpis").innerHTML=items.map(([l,v,u,d,dir,rv])=>{
     let delta="";if(rv!=null&&rule==="price"){const df=v-rv;if(Math.abs(df)>=0.5*Math.pow(10,-d)){const good=dir==="lower"?df<0:df>0;delta=`<div class="d" style="color:${dir?(good?"var(--good)":"var(--bad)"):"var(--muted)"}">${df>0?"+":"−"}${fmt(Math.abs(df),d)} vs fixed</div>`;}else delta=`<div class="d" style="color:var(--muted)">same as fixed</div>`;}
@@ -508,20 +547,72 @@ function pyCode(){
 }
 let tmr=null;function schedule(){clearTimeout(tmr);tmr=setTimeout(()=>run(false),120);}
 function run(redraw=true){
+  N=96*D; mkLabels(); if(tNow>N-1) tNow=N-1; const sl=document.getElementById("tSl"); sl.max=N-1; sl.value=tNow;
   if(redraw)draw();
-  const o=simulate();
+  const o=simulate(); lastO=o;
   let ref=null; if(rule==="price"){rule="fixed";ref=simulate();rule="price";}
-  renderCharts(o);renderKpis(o,ref);renderWarns(o);pyCode();
+  renderCharts(o);renderKpis(o,ref);renderWarns(o);pyCode();updateLive();
   const act=nodes.filter(active).length;
   document.getElementById("runInfo").textContent=`${act} of ${nodes.length} models running · ${N} steps simulated`;
   const names={sunny:"a sunny day with negative midday prices",windy:"a windy, cheap day",calm:"a calm, expensive winter day"};
-  document.getElementById("resHint").textContent=`One day in 15-minute steps: ${names[sc]}, assets ${rule==="price"?"follow the price (changes vs a fixed schedule shown under each number)":"on a fixed schedule"}.`;
+  document.getElementById("resTitle").textContent=D>1?"Results for two days":"Results for one day";
+  const tl=dayTypes().map(x=>names[x]).join(", then ");
+  document.getElementById("resHint").textContent=`${D>1?"Two days":"One day"} in 15-minute steps: ${tl}. Assets ${rule==="price"?"follow the price (changes vs a fixed schedule shown under each number)":"on a fixed schedule"}.`;
 }
 function refresh(){draw();inspector();schedule();}
+/* ---------- live view ---------- */
+function shareOf(n,key){const tot=nodes.filter(x=>x.t===n.t&&active(x)).reduce((s,x)=>s+x.p[key],0);return tot>0?n.p[key]/tot:0;}
+function flowsAt(n,t){const o=lastO,f={},p=n.p;if(!o||!active(n))return f;const cf=o.res[t]>0?1-o.curt[t]/o.res[t]:1;
+  switch(n.t){
+    case"wind":f.e=p.P*o.wcf[t]*cf;break; case"solar":f.e=p.P*o.pcf[t]*cf;break;
+    case"battery":f.e=(o.bdis[t]-o.bch[t])*shareOf(n,"P");break; case"biogas":f.e=-p.P;break;
+    case"datacentre":f.e=-p.P;if(n.links.has("h"))f.h=p.P*p.W/100;break;
+    case"heatpump":{const sh=shareOf(n,"Q");f.e=-o.hpE[t]*sh;f.h=o.hHp[t]*sh;break;}
+    case"eboiler":{const sh=shareOf(n,"P");f.e=-o.ebE[t]*sh;f.h=o.hEb[t]*sh;break;}
+    case"skyclean":f.e=-p.P;if(n.links.has("h"))f.h=p.H;break; case"quantafuel":f.e=-p.P;f.h=-p.H;break;
+    case"electrolyser":{const sh=shareOf(n,"P");f.e=-o.el[t]*sh;f.h2=o.prod[t]*sh;if(n.links.has("h"))f.h=0.2*o.el[t]*sh;break;}
+    case"rockstore":f.h=(o.hSt[t]-o.stCh[t])*shareOf(n,"E");break;
+    case"districtheat":f.h=-p.D*o.dhf[t];break; case"starfish":f.h=-p.H;break;
+    case"h2tank":f.h2=-(o.prod[t]-o.served[t])*shareOf(n,"C");break;
+    case"methanol":f.h2=-o.served[t]*shareOf(n,"U");break;}
+  return f;}
+function liveText(n,t){const o=lastO,f=flowsAt(n,t),T=TYPES[n.t];if(!active(n))return "not linked";const v=x=>fmt(Math.abs(x||0),1);
+  switch(n.t){case"battery":return `${Math.round(o.soc[t])}% ${(f.e||0)>0.05?"out":(f.e||0)<-0.05?"in":"idle"} ${(f.e||0)>0.05||(f.e||0)<-0.05?v(f.e):""}`;
+    case"rockstore":return `${Math.round(o.tes[t])} % full`; case"h2tank":return `${Math.round(o.h2[t])} % full`;
+    case"electrolyser":return `${Math.round(f.h2||0)} kg H₂/h`;
+    case"heatpump":case"eboiler":return `${v(f.h)} MW heat`;
+    case"methanol":return (f.h2||0)<-0.5?`${Math.round(-f.h2)} kg H₂/h`:"stopped";
+    case"districtheat":case"starfish":return `${v(f.h)} MW heat`;
+    default:return `${v(f.e!==undefined?f.e:f.h)} MW`;}}
+const REF={e:20,h:8,h2:150};
+function updateLive(){
+  const o=lastO;if(!o)return;const t=tNow;
+  document.getElementById("clock").textContent=`Day ${Math.floor(t/96)+1} · ${hhmm(t)}${D>1?" ("+DAYNAME[dayTypes()[Math.floor(t/96)]]+")":""}`;
+  document.getElementById("tSl").value=t;
+  linkEls.forEach(L=>{const v=flowsAt(L.n,t)[L.c]||0,a=Math.min(1,Math.abs(v)/REF[L.c]);L.el.setAttribute("stroke-width",Math.abs(v)<0.05?0:(2+5*Math.sqrt(a)).toFixed(1));L.el.dataset.v=v;L.el.dataset.a=a;});
+  nodes.forEach(n=>{if(valEls[n.id])valEls[n.id].textContent=liveText(n,t);});
+  if(gridFlow){const v=o.grid[t],a=Math.min(1,Math.abs(v)/REF.e);gridFlow.setAttribute("stroke-width",Math.abs(v)<0.05?0:(2+5*Math.sqrt(a)).toFixed(1));gridFlow.dataset.v=v;gridFlow.dataset.a=a;gridVal.textContent=`${v>=0?"+":"−"}${fmt(Math.abs(v),1)} MW ${v>0.05?"in":v<-0.05?"out":""}`;}
+  const p=o.price[t];const cell=(l,v,c)=>`<div>${l}<b style="${c?"color:"+c:""}">${v}</b></div>`;
+  const sp=[...o.price].sort((a,b)=>a-b),lo=sp[Math.floor(N/3)],hi=sp[Math.floor(2*N/3)];
+  document.getElementById("now").innerHTML=cell("Price now",`${p} DKK`,p<lo?"var(--good)":p>=hi?"var(--bad)":"")+cell("Grid",`${o.grid[t]>=0?"+":"−"}${fmt(Math.abs(o.grid[t]),1)} MW`,o.over[t]>0.05?"var(--bad)":"")+
+    cell("Wind + solar",`${fmt(o.res[t]-o.curt[t],1)} MW`)+cell("Curtailed",`${fmt(o.curt[t],1)} MW`,o.curt[t]>0.05?"var(--bad)":"")+
+    cell("Heat store",o.tes[t]==null?"–":`${Math.round(o.tes[t])} %`)+cell("H₂ tank",o.h2[t]==null?"–":`${Math.round(o.h2[t])} %`);
+  for(const k in charts)charts[k].draw();
+}
+let off=0,last=performance.now(),acc=0;const reduceM=matchMedia("(prefers-reduced-motion: reduce)").matches;
+function tick(now){const dt=Math.min(0.1,(now-last)/1000);last=now;off+=dt;
+  if(playing){acc+=dt*speed;if(acc>=1){const st=Math.floor(acc);acc-=st;tNow=(tNow+st)%N;updateLive();}}
+  if(!reduceM){const els=[...linkEls.map(l=>l.el)];if(gridFlow)els.push(gridFlow);els.forEach(e=>{const a=+e.dataset.a||0,v=+e.dataset.v||0;if(a<0.003)return;e.style.strokeDashoffset=(-(off*(16+70*a)*(v>=0?1:-1)))%1600;});}
+  requestAnimationFrame(tick);}
+requestAnimationFrame(tick);
+document.getElementById("play").addEventListener("click",()=>{playing=!playing;const b=document.getElementById("play");b.innerHTML=playing?"&#10074;&#10074; Pause":"&#9654; Play";b.setAttribute("aria-label",playing?"Pause":"Play");});
+document.getElementById("tSl").addEventListener("input",e=>{tNow=+e.target.value;updateLive();});
 /* ---------- controls ---------- */
 function seg(id,attr,cb){document.getElementById(id).addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;document.querySelectorAll(`#${id} button`).forEach(x=>x.setAttribute("aria-pressed",x===b?"true":"false"));cb(b.dataset[attr]);});}
 seg("scSeg","sc",v=>{sc=v;run();});
 seg("ruleSeg","rule",v=>{rule=v;run();});
+seg("spdSeg","s",v=>{speed=+v;});
+seg("daySeg","d",v=>{D=+v;run();});
 [["gImp","imp","MW"],["gExp","exp","MW"],["gTar","tar","DKK/MWh"]].forEach(([id,k,u])=>{const r=document.getElementById(id);r.addEventListener("input",()=>{grid[k]=+r.value;document.getElementById(id+"V").textContent=`${r.value} ${u}`;draw();schedule();});});
 document.getElementById("runBtn").addEventListener("click",()=>run());
 document.getElementById("resetBtn").addEventListener("click",()=>{loadGreenLab();refresh();});
@@ -531,9 +622,11 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change",recolor);
 new MutationObserver(recolor).observe(document.documentElement,{attributes:true,attributeFilter:["data-theme"]});
 buildPalette();loadGreenLab();
 // preset via hash for screenshots, e.g. #sunny-price-sel or #calm-fixed
-const m=/^#?(sunny|windy|calm)-(price|fixed)(-demo)?$/.exec(location.hash||"");
+const m=/^#?(sunny|windy|calm)-(price|fixed)(-demo)?(?:-d(2))?(?:-t(\d+))?$/.exec(location.hash||"");
 if(m){sc=m[1];rule=m[2];document.querySelectorAll("#scSeg button").forEach(x=>x.setAttribute("aria-pressed",x.dataset.sc===sc?"true":"false"));document.querySelectorAll("#ruleSeg button").forEach(x=>x.setAttribute("aria-pressed",x.dataset.rule===rule?"true":"false"));
-  if(m[3]){const n=add("battery",590,500,["e"]);n.p.P=15;n.p.E=40;n.links=new Set();sel="eboiler_7";}}
+  if(m[3]){const n=add("battery",590,500,["e"]);n.p.P=15;n.p.E=40;n.links=new Set();sel="eboiler_7";}
+  if(m[4]){D=2;document.querySelectorAll("#daySeg button").forEach(x=>x.setAttribute("aria-pressed",x.dataset.d==="2"?"true":"false"));}
+  if(m[5]) tNow=+m[5];}
 sel=sel||"electrolyser_13";
 refresh();
 })();
